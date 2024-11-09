@@ -1,0 +1,12 @@
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Define data augmentation parameters
+datagen = ImageDataGenerator(
+    rotation_range=15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    horizontal_flip=True,
+)
+
+# Fit the data generator on the training set
+datagen.fit(train_images)
