@@ -230,7 +230,7 @@ class ARAP:
                 detected_color = 'red'
                 if norm_red < dark_shade_threshold:  # Check for dark red
                     if not self.seen_red:
-                        print("First time seeing a dark Red box!")
+                        print("First time seeing the Red box!(dark)")
                         self.seen_red = True
                     if not self.red_in_sight:
                         self.red_tally += 1
@@ -247,7 +247,7 @@ class ARAP:
                 detected_color = 'green'
                 if norm_green < dark_shade_threshold:  # Check for dark green
                     if not self.seen_green:
-                        print("First time seeing a dark Green box!")
+                        print("First time seeing the Green box!(dark)")
                         self.seen_green = True
                     if not self.green_in_sight:
                         self.green_tally += 1
@@ -264,7 +264,7 @@ class ARAP:
                 detected_color = 'blue'
                 if norm_blue < dark_shade_threshold:  # Check for dark blue
                     if not self.seen_blue:
-                        print("First time seeing a dark Blue box!")
+                        print("First time seeing the Blue box!(dark)")
                         self.seen_blue = True
                     if not self.blue_in_sight:
                         self.blue_tally += 1
