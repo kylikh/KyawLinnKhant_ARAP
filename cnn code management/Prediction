@@ -1,0 +1,38 @@
+# Import necessary modules
+from tensorflow.keras import preprocessing, models
+import numpy as np
+
+# Load and prepare a batch of images
+def load_images(filenames):
+    # Initialize a list to hold all preprocessed images
+    images = []
+    for filename in filenames:
+        # Load the image
+        img = preprocessing.image.load_img(filename, target_size=(32, 32))
+        # Convert to array
+        img = preprocessing.image.img_to_array(img)
+        # Normalize pixel data
+        img = img.astype('float32') / 255.0
+        # Append to images list
+        images.append(img)
+    # Stack images into a batch
+    return np.stack(images, axis=0)
+
+# Load multiple images and predict their classes
+def run_example():
+    # List of image paths to predict
+    filenames = ['cat.png', 'bird.png', 'truck.png', 'webotscat.png', 'webotscatto.png']  # Add as many as needed
+    # Load images
+    imgs = load_images(filenames)
+    # Load model
+    model = models.load_model('final_model.h5')
+    # Predict classes for the batch of images
+    predictions = model.predict(imgs)
+    # Display predictions
+    for i, pred in enumerate(predictions):
+        result = np.argmax(pred)
+        print(f"Prediction for {filenames[i]}:", class_names[result])
+        print()
+
+# Run the example
+run_example()
