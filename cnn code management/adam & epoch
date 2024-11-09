@@ -1,0 +1,14 @@
+# Define the ReduceLROnPlateau callback
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6)
+
+# Compile the model
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+# Fit the model with the ReduceLROnPlateau callback
+history = model.fit(train_images, train_labels,
+                    epochs=50,
+                    batch_size=32,
+                    validation_data=(test_images, test_labels),
+                    callbacks=[reduce_lr])
