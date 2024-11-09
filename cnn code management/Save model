@@ -1,0 +1,2 @@
+# save model
+model.save('final_model.h5')
