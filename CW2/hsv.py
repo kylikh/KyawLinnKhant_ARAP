@@ -193,14 +193,16 @@ class ARAP:
         height = self.camera.getHeight()
         image = self.camera.getImage()
         
-        # Initialize average RGB values
         avg_red, avg_green, avg_blue = 0, 0, 0
     
         if self.camera_interval >= interval:
-            # Convert the camera image to OpenCV format
+            red_sum, green_sum, blue_sum = 0, 0, 0
             img = np.frombuffer(image, np.uint8).reshape((height, width, 4))[:, :, :3]
+            
+            # Convert the image from BGR to HSV
+            img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
     
-            # Calculate the average RGB values
+            # Calculate the sum of RGB values for dominant color detection
             red_sum = np.sum(img[:, :, 2])
             green_sum = np.sum(img[:, :, 1])
             blue_sum = np.sum(img[:, :, 0])
@@ -213,34 +215,50 @@ class ARAP:
             dominant_color = None
             if avg_red > avg_green and avg_red > avg_blue:
                 dominant_color = "red"
-                lower_hsv = np.array([0, 100, 100])   # Adjusted lower bound for red in HSV
-                upper_hsv = np.array([10, 255, 255])  # Adjusted upper bound for red in HSV
             elif avg_green > avg_red and avg_green > avg_blue:
                 dominant_color = "green"
-                lower_hsv = np.array([35, 50, 50])    # Adjusted lower bound for green in HSV
-                upper_hsv = np.array([85, 255, 255])  # Adjusted upper bound for green in HSV
             elif avg_blue > avg_red and avg_blue > avg_green:
                 dominant_color = "blue"
-                lower_hsv = np.array([90, 50, 50])    # Adjusted lower bound for blue in HSV
-                upper_hsv = np.array([130, 255, 255]) # Adjusted upper bound for blue in HSV
     
-            # Convert image to HSV and apply mask based on dominant color
-            img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-            mask = cv.inRange(img_hsv, lower_hsv, upper_hsv)
+            mask = None
+            if dominant_color == "red":
+                # Two ranges for red in HSV
+                lower_red_1 = np.array([0, 100, 100])
+                upper_red_1 = np.array([10, 255, 255])
+                lower_red_2 = np.array([170, 100, 100])
+                upper_red_2 = np.array([180, 255, 255])
+    
+                # Create two masks and combine them on the HSV image
+                mask1 = cv.inRange(img_hsv, lower_red_1, upper_red_1)
+                mask2 = cv.inRange(img_hsv, lower_red_2, upper_red_2)
+                mask = cv.bitwise_or(mask1, mask2)
+    
+            elif dominant_color == "green":
+                # Wider range for green in HSV
+                lower_green = np.array([35, 50, 50])
+                upper_green = np.array([85, 255, 255])
+                mask = cv.inRange(img_hsv, lower_green, upper_green)
+    
+            elif dominant_color == "blue":
+                # Wider range for blue in HSV
+                lower_blue = np.array([90, 50, 50])
+                upper_blue = np.array([140, 255, 255])
+                mask = cv.inRange(img_hsv, lower_blue, upper_blue)
+    
+            # Apply the mask to the original BGR image
             masked_img = cv.bitwise_and(img, img, mask=mask)
     
-            # Display masked image
+            # Display the masked image
             cv.imshow("Dominant Color Mask", masked_img)
             cv.waitKey(1)
     
-            # Reset interval counter
             self.camera_interval = 0
         else:
             self.camera_interval += 1
         
         return avg_red, avg_green, avg_blue
     
-    
+        
     #def ground_obstacles_detected(self):
     #    for i in range(self.GROUND_SENSORS_NUMBER):
     #        if not self.ground_sensors[i]:
