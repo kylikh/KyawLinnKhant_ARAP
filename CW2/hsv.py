@@ -191,119 +191,95 @@ class ARAP:
     def step(self):
         if self.robot.step(self.get_time_step()) == -1:
             sys.exit(0)
-            
+                
     def get_camera_image(self, interval):
         width = self.camera.getWidth()
         height = self.camera.getHeight()
         image = self.camera.getImage()
-        
+    
         # Initialize average RGB values
         avg_red, avg_green, avg_blue = 0, 0, 0
     
         if self.camera_interval >= interval:
             # Convert the Webots image to OpenCV format and make it writable
             img = np.frombuffer(image, np.uint8).reshape((height, width, 4))[:, :, :3].copy()
-            
-            # Convert the image from BGR to HSV
-            img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-            
-            # Calculate the sum of RGB values to find average color
-            red_sum = np.sum(img[:, :, 2])
-            green_sum = np.sum(img[:, :, 1])
-            blue_sum = np.sum(img[:, :, 0])
-            total_pixels = width * height
-            avg_red = red_sum / total_pixels
-            avg_green = green_sum / total_pixels
-            avg_blue = blue_sum / total_pixels
     
-            # Refine HSV ranges for each color
-            lower_dark_red = np.array([0, 100, 30])    # Narrower range, higher saturation
+            # Define center region of interest (ROI) to avoid edge detections
+            roi_y_start, roi_y_end = int(0.1 * height), int(0.9 * height)
+            roi_x_start, roi_x_end = int(0.1 * width), int(0.9 * width)
+            img_hsv = cv.cvtColor(img[roi_y_start:roi_y_end, roi_x_start:roi_x_end], cv.COLOR_BGR2HSV)
+    
+            # Define refined HSV ranges for each color
+            lower_dark_red = np.array([0, 80, 20])
             upper_dark_red = np.array([10, 255, 150])
-    
-            lower_light_red = np.array([170, 100, 30])
+            lower_light_red = np.array([170, 80, 20])
             upper_light_red = np.array([180, 255, 255])
-            
             lower_green = np.array([35, 50, 50])
             upper_green = np.array([85, 255, 255])
-            
-            lower_dark_blue = np.array([100, 70, 20])
-            upper_dark_blue = np.array([130, 255, 100])
-            
+            lower_dark_blue = np.array([100, 70, 50])  # Adjusted blue range
+            upper_dark_blue = np.array([130, 255, 200])
             lower_light_blue = np.array([105, 120, 90])
             upper_light_blue = np.array([125, 255, 220])
-    
-            # Create masks for each color
-            dark_red_mask = cv.inRange(img_hsv, lower_dark_red, upper_dark_red)
-            light_red_mask = cv.inRange(img_hsv, lower_light_red, upper_light_red)
-            red_mask = cv.bitwise_or(dark_red_mask, light_red_mask)
             
+            # Create masks for each color within the ROI
+            red_mask = cv.inRange(img_hsv, lower_dark_red, upper_dark_red) | cv.inRange(img_hsv, lower_light_red, upper_light_red)
             green_mask = cv.inRange(img_hsv, lower_green, upper_green)
-            
-            dark_blue_mask = cv.inRange(img_hsv, lower_dark_blue, upper_dark_blue)
-            light_blue_mask = cv.inRange(img_hsv, lower_light_blue, upper_light_blue)
-            blue_mask = cv.bitwise_or(dark_blue_mask, light_blue_mask)
+            blue_mask = cv.inRange(img_hsv, lower_dark_blue, upper_dark_blue)| cv.inRange(img_hsv, lower_light_blue, upper_light_blue)
+
     
-            # Apply minimal morphological operations to reduce noise
-            kernel = np.ones((3, 3), np.uint8)
-            red_mask = cv.erode(red_mask, kernel, iterations=1)
-            blue_mask = cv.erode(blue_mask, kernel, iterations=1)
+            # Apply morphological operations to refine masks
+            kernel = np.ones((5, 5), np.uint8)
+            red_mask = cv.morphologyEx(red_mask, cv.MORPH_CLOSE, kernel)
+            green_mask = cv.morphologyEx(green_mask, cv.MORPH_CLOSE, kernel)
+            blue_mask = cv.morphologyEx(blue_mask, cv.MORPH_CLOSE, kernel)
     
-            # Grid segmentation (4x4 grid)
-            segment_height = height // 4
-            segment_width = width // 4
-            red_segments = 0
-            green_segments = 0
-            blue_segments = 0
-            min_red_pixels = 0.3 * (segment_height * segment_width)  # At least 30% of the segment must be red
+            # Display the grid with detection overlay and apply masking
+            self.display_grid_with_detection(img, red_mask, green_mask, blue_mask)
+
+            # Consistency check with a minimum pixel threshold to ensure a significant detection
+            red_detected = cv.countNonZero(red_mask) > 550  # Adjust threshold for significance
+            green_detected = cv.countNonZero(green_mask) > 550
+            blue_detected = cv.countNonZero(blue_mask) > 550
     
-            # Loop through each segment in the 4x4 grid
-            for i in range(4):
-                for j in range(4):
-                    # Define segment boundaries
-                    x_start = j * segment_width
-                    x_end = (j + 1) * segment_width
-                    y_start = i * segment_height
-                    y_end = (i + 1) * segment_height
-                    
-                    # Extract each segment
-                    red_segment = red_mask[y_start:y_end, x_start:x_end]
-                    green_segment = green_mask[y_start:y_end, x_start:x_end]
-                    blue_segment = blue_mask[y_start:y_end, x_start:x_end]
+            # Tally and first-time detection messages
+            if red_detected and not self.red_in_sight:
+                if not self.seen_red:
+                    print("First time seeing the Red box!")
+                    self.seen_red = True
+                self.red_in_sight = True
+                self.red_tally += 1  # Increment red tally when detected
+            elif not red_detected and self.red_in_sight:
+                self.red_in_sight = False
     
-                    # Count non-zero pixels in each color mask segment
-                    if cv.countNonZero(red_segment) > min_red_pixels:  # Only count if red is significant
-                        red_segments += 1
-                    if cv.countNonZero(green_segment) > 0:
-                        green_segments += 1
-                    if cv.countNonZero(blue_segment) > 0:
-                        blue_segments += 1
+            if green_detected and not self.green_in_sight:
+                if not self.seen_green:
+                    print("First time seeing the Green box!")
+                    self.seen_green = True
+                self.green_in_sight = True
+                self.green_tally += 1  # Increment green tally when detected
+            elif not green_detected and self.green_in_sight:
+                self.green_in_sight = False
     
-            # Check if a color is detected in 6 or more segments and print message once
-            if red_segments >= 9 and not self.red_in_sight:
-                print("Red detected in multiple segments!")
-                self.red_in_sight = True  # Set flag to indicate red is in sight
-            elif red_segments < 0 and self.red_in_sight:
-                self.red_in_sight = False  # Reset flag when red goes out of sight
+            if blue_detected and not self.blue_in_sight:
+                if not self.seen_blue:
+                    print("First time seeing the Blue box!")
+                    self.seen_blue = True
+                self.blue_in_sight = True
+                self.blue_tally += 1  # Increment blue tally when detected
+            elif not blue_detected and self.blue_in_sight:
+                self.blue_in_sight = False
     
-            if green_segments >= 9 and not self.green_in_sight:
-                print("Green detected in multiple segments!")
-                self.green_in_sight = True  # Set flag to indicate green is in sight
-            elif green_segments < 0 and self.green_in_sight:
-                self.green_in_sight = False  # Reset flag when green goes out of sight
+            # Minute-based tally reporting
+            current_time = time.time()
+            if current_time - self.last_minute_time >= 60:
+                self.minutes_passed += 1
+                print(f"We've encountered (red: {self.red_tally}, green: {self.green_tally}, blue: {self.blue_tally}) times during the last {self.minutes_passed} minutes.")
+                self.last_minute_time = current_time
     
-            if blue_segments >= 9 and not self.blue_in_sight:
-                print("Blue detected in multiple segments!")
-                self.blue_in_sight = True  # Set flag to indicate blue is in sight
-            elif blue_segments < 0 and self.blue_in_sight:
-                self.blue_in_sight = False  # Reset flag when blue goes out of sight
-    
-            # Combine all color masks for display
-            combined_mask = cv.bitwise_or(cv.bitwise_or(red_mask, green_mask), blue_mask)
-            masked_img = cv.bitwise_and(img, img, mask=combined_mask)
-    
-            # Display the result
-            cv.imshow("Dominant Color Mask with Grid Segmentation", masked_img)
-            cv.waitKey(1)
+                # Reset `in_sight` flags for the next minute
+                self.red_in_sight = False
+                self.green_in_sight = False
+                self.blue_in_sight = False
     
             # Reset interval counter
             self.camera_interval = 0
@@ -311,8 +287,60 @@ class ARAP:
             # Increment the camera interval to wait until the next capture
             self.camera_interval += 1
     
-        # Return average RGB values and update tallies
+        # Return average RGB values if needed
         return avg_red, avg_green, avg_blue
+    
+    def display_grid_with_detection(self, img, red_mask, green_mask, blue_mask):
+        # Define a region of interest (ROI) covering more of the image vertically and horizontally
+        height, width = img.shape[:2]
+        roi_y_start = int(0.1 * height)  # Start 10% from the top
+        roi_y_end = int(0.9 * height)    # End 90% from the top
+        roi_x_start = 0  # Start at the left edge of the image
+        roi_x_end = width  # End at the right edge of the image
+    
+        # Define grid dimensions for full coverage
+        grid_rows, grid_cols = 10, 13 # 15 rows for more vertical coverage, 5 columns for horizontal coverage
+        segment_height = (roi_y_end - roi_y_start) // grid_rows
+        segment_width = (roi_x_end - roi_x_start) // grid_cols
+        min_pixels = 0.05 * (segment_width * segment_height)  # Minimum pixels for a detection
+    
+        # Copy image to draw on
+        img_with_grid = img.copy()
+    
+        # Loop through each grid segment within the ROI
+        for i in range(grid_rows):
+            for j in range(grid_cols):
+                y_start = roi_y_start + i * segment_height
+                y_end = roi_y_start + (i + 1) * segment_height
+                x_start = roi_x_start + j * segment_width
+                x_end = roi_x_start + (j + 1) * segment_width
+    
+                # Check each segment for color detection
+                red_segment = red_mask[y_start:y_end, x_start:x_end]
+                green_segment = green_mask[y_start:y_end, x_start:x_end]
+                blue_segment = blue_mask[y_start:y_end, x_start:x_end]
+    
+                if cv.countNonZero(red_segment) > min_pixels:
+                    # Fill detected red segments with semi-transparent red
+                    cv.rectangle(img_with_grid, (x_start, y_start), (x_end, y_end), (0, 0, 255), -1)
+                    cv.addWeighted(img_with_grid[y_start:y_end, x_start:x_end], 0.3, img[y_start:y_end, x_start:x_end], 0.7, 0, img_with_grid[y_start:y_end, x_start:x_end])
+    
+                if cv.countNonZero(green_segment) > min_pixels:
+                    # Fill detected green segments with semi-transparent green
+                    cv.rectangle(img_with_grid, (x_start, y_start), (x_end, y_end), (0, 255, 0), -1)
+                    cv.addWeighted(img_with_grid[y_start:y_end, x_start:x_end], 0.3, img[y_start:y_end, x_start:x_end], 0.7, 0, img_with_grid[y_start:y_end, x_start:x_end])
+    
+                if cv.countNonZero(blue_segment) > min_pixels:
+                    # Fill detected blue segments with semi-transparent blue
+                    cv.rectangle(img_with_grid, (x_start, y_start), (x_end, y_end), (255, 0, 0), -1)
+                    cv.addWeighted(img_with_grid[y_start:y_end, x_start:x_end], 0.3, img[y_start:y_end, x_start:x_end], 0.7, 0, img_with_grid[y_start:y_end, x_start:x_end])
+    
+                # Draw subtle grid lines
+                cv.rectangle(img_with_grid, (x_start, y_start), (x_end, y_end), (200, 200, 200), 1)
+    
+        # Display the image with the grid overlay
+        cv.imshow("Grid with Detection (Expanded Vertically and Horizontally)", img_with_grid)
+        cv.waitKey(1)
     
     #def ground_obstacles_detected(self):
     #    for i in range(self.GROUND_SENSORS_NUMBER):
