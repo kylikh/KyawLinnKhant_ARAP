@@ -214,8 +214,16 @@ class ARAP:
             upper_dark_red = np.array([10, 255, 150])
             lower_light_red = np.array([170, 80, 20])
             upper_light_red = np.array([180, 255, 255])
-            lower_green = np.array([35, 50, 50])
-            upper_green = np.array([85, 255, 255])
+            
+                        # Dark green range (slightly lower brightness)
+            # Define green HSV ranges for both dark and light shades
+            lower_dark_green = np.array([40, 50, 20])
+            upper_dark_green = np.array([80, 255, 100])
+            
+            lower_light_green = np.array([35, 80, 100])
+            upper_light_green = np.array([85, 255, 255])
+            
+            
             lower_dark_blue = np.array([100, 70, 50])  # Adjusted blue range
             upper_dark_blue = np.array([130, 255, 200])
             lower_light_blue = np.array([105, 120, 90])
@@ -223,7 +231,8 @@ class ARAP:
             
             # Create masks for each color within the ROI
             red_mask = cv.inRange(img_hsv, lower_dark_red, upper_dark_red) | cv.inRange(img_hsv, lower_light_red, upper_light_red)
-            green_mask = cv.inRange(img_hsv, lower_green, upper_green)
+            # Combine dark and light green masks
+            green_mask = cv.inRange(img_hsv, lower_dark_green, upper_dark_green) | cv.inRange(img_hsv, lower_light_green, upper_light_green)
             blue_mask = cv.inRange(img_hsv, lower_dark_blue, upper_dark_blue)| cv.inRange(img_hsv, lower_light_blue, upper_light_blue)
 
     
@@ -232,14 +241,15 @@ class ARAP:
             red_mask = cv.morphologyEx(red_mask, cv.MORPH_CLOSE, kernel)
             green_mask = cv.morphologyEx(green_mask, cv.MORPH_CLOSE, kernel)
             blue_mask = cv.morphologyEx(blue_mask, cv.MORPH_CLOSE, kernel)
-    
+            
+
             # Display the grid with detection overlay and apply masking
             self.display_grid_with_detection(img, red_mask, green_mask, blue_mask)
 
             # Consistency check with a minimum pixel threshold to ensure a significant detection
-            red_detected = cv.countNonZero(red_mask) > 550  # Adjust threshold for significance
-            green_detected = cv.countNonZero(green_mask) > 550
-            blue_detected = cv.countNonZero(blue_mask) > 550
+            red_detected = cv.countNonZero(red_mask) > 750  # Adjust threshold for significance
+            green_detected = cv.countNonZero(green_mask) > 500
+            blue_detected = cv.countNonZero(blue_mask) > 750
     
             # Tally and first-time detection messages
             if red_detected and not self.red_in_sight:
@@ -293,16 +303,16 @@ class ARAP:
     def display_grid_with_detection(self, img, red_mask, green_mask, blue_mask):
         # Define a region of interest (ROI) covering more of the image vertically and horizontally
         height, width = img.shape[:2]
-        roi_y_start = int(0.1 * height)  # Start 10% from the top
+        roi_y_start = int(0.05 * height)  # Start 10% from the top
         roi_y_end = int(0.9 * height)    # End 90% from the top
         roi_x_start = 0  # Start at the left edge of the image
         roi_x_end = width  # End at the right edge of the image
     
         # Define grid dimensions for full coverage
-        grid_rows, grid_cols = 10, 13 # 15 rows for more vertical coverage, 5 columns for horizontal coverage
+        grid_rows, grid_cols = 10, 13 # 10 rows for more vertical coverage, 13 columns for horizontal coverage
         segment_height = (roi_y_end - roi_y_start) // grid_rows
         segment_width = (roi_x_end - roi_x_start) // grid_cols
-        min_pixels = 0.05 * (segment_width * segment_height)  # Minimum pixels for a detection
+        min_pixels = 0.3 * (segment_width * segment_height)  # Minimum pixels for a detection
     
         # Copy image to draw on
         img_with_grid = img.copy()
