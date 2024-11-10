@@ -216,107 +216,93 @@ class ARAP:
             avg_green = green_sum / total_pixels
             avg_blue = blue_sum / total_pixels
     
-            # Define HSV ranges for red with separate ranges for dark and light red
-            lower_dark_red_1 = np.array([0, 100, 50])
-            upper_dark_red_1 = np.array([10, 255, 150])
-            lower_dark_red_2 = np.array([170, 100, 50])
-            upper_dark_red_2 = np.array([180, 255, 150])
+            # Refine HSV ranges for each color
+            lower_dark_red = np.array([0, 100, 30])    # Narrower range, higher saturation
+            upper_dark_red = np.array([10, 255, 150])
     
-            lower_light_red_1 = np.array([0, 100, 150])
-            upper_light_red_1 = np.array([10, 255, 255])
-            lower_light_red_2 = np.array([170, 100, 150])
-            upper_light_red_2 = np.array([180, 255, 255])
-    
-            # Create masks for dark and light red, then combine them
-            dark_red_mask1 = cv.inRange(img_hsv, lower_dark_red_1, upper_dark_red_1)
-            dark_red_mask2 = cv.inRange(img_hsv, lower_dark_red_2, upper_dark_red_2)
-            dark_red_mask = cv.bitwise_or(dark_red_mask1, dark_red_mask2)
-    
-            light_red_mask1 = cv.inRange(img_hsv, lower_light_red_1, upper_light_red_1)
-            light_red_mask2 = cv.inRange(img_hsv, lower_light_red_2, upper_light_red_2)
-            light_red_mask = cv.bitwise_or(light_red_mask1, light_red_mask2)
-    
-            # Combine light and dark red masks
-            red_mask = cv.bitwise_or(dark_red_mask, light_red_mask)
-            red_score = cv.countNonZero(red_mask)
-    
-            # Define HSV range for green
+            lower_light_red = np.array([170, 100, 30])
+            upper_light_red = np.array([180, 255, 255])
+            
             lower_green = np.array([35, 50, 50])
             upper_green = np.array([85, 255, 255])
-            green_mask = cv.inRange(img_hsv, lower_green, upper_green)
-            green_score = cv.countNonZero(green_mask)
-    
-            # Define HSV ranges for dark blue and light blue
+            
             lower_dark_blue = np.array([100, 70, 20])
             upper_dark_blue = np.array([130, 255, 100])
-    
+            
             lower_light_blue = np.array([105, 120, 90])
             upper_light_blue = np.array([125, 255, 220])
     
-            # Create masks for dark and light blue, then combine them
+            # Create masks for each color
+            dark_red_mask = cv.inRange(img_hsv, lower_dark_red, upper_dark_red)
+            light_red_mask = cv.inRange(img_hsv, lower_light_red, upper_light_red)
+            red_mask = cv.bitwise_or(dark_red_mask, light_red_mask)
+            
+            green_mask = cv.inRange(img_hsv, lower_green, upper_green)
+            
             dark_blue_mask = cv.inRange(img_hsv, lower_dark_blue, upper_dark_blue)
             light_blue_mask = cv.inRange(img_hsv, lower_light_blue, upper_light_blue)
             blue_mask = cv.bitwise_or(dark_blue_mask, light_blue_mask)
     
             # Apply minimal morphological operations to reduce noise
             kernel = np.ones((3, 3), np.uint8)
+            red_mask = cv.erode(red_mask, kernel, iterations=1)
             blue_mask = cv.erode(blue_mask, kernel, iterations=1)
-            blue_score = cv.countNonZero(blue_mask)
     
-            # Check for red detection and update sight status and tally
-            if red_score > 1000 and not self.red_in_sight:
-                print("Red Detected!")
-                self.red_tally += 1
-                self.red_in_sight = True
-            elif red_score <= 1000 and self.red_in_sight:
-                print("Red Out of Sight")
-                self.red_in_sight = False
+            # Grid segmentation (4x4 grid)
+            segment_height = height // 4
+            segment_width = width // 4
+            red_segments = 0
+            green_segments = 0
+            blue_segments = 0
+            min_red_pixels = 0.3 * (segment_height * segment_width)  # At least 30% of the segment must be red
     
-            # Check for green detection and update sight status and tally
-            if green_score > 1000 and not self.green_in_sight:
-                print("Green Detected!")
-                self.green_tally += 1
-                self.green_in_sight = True
-            elif green_score <= 1000 and self.green_in_sight:
-                print("Green Out of Sight")
-                self.green_in_sight = False
+            # Loop through each segment in the 4x4 grid
+            for i in range(4):
+                for j in range(4):
+                    # Define segment boundaries
+                    x_start = j * segment_width
+                    x_end = (j + 1) * segment_width
+                    y_start = i * segment_height
+                    y_end = (i + 1) * segment_height
+                    
+                    # Extract each segment
+                    red_segment = red_mask[y_start:y_end, x_start:x_end]
+                    green_segment = green_mask[y_start:y_end, x_start:x_end]
+                    blue_segment = blue_mask[y_start:y_end, x_start:x_end]
     
-            # Check for blue detection and update sight status and tally
-            if blue_score > 1000 and not self.blue_in_sight:
-                print("Blue Detected!")
-                self.blue_tally += 1
-                self.blue_in_sight = True
-            elif blue_score <= 1000 and self.blue_in_sight:
-                print("Blue Out of Sight")
-                self.blue_in_sight = False
+                    # Count non-zero pixels in each color mask segment
+                    if cv.countNonZero(red_segment) > min_red_pixels:  # Only count if red is significant
+                        red_segments += 1
+                    if cv.countNonZero(green_segment) > 0:
+                        green_segments += 1
+                    if cv.countNonZero(blue_segment) > 0:
+                        blue_segments += 1
     
-            # Optional: Use contour detection for each color with area threshold
-            min_contour_area = 500  # Set a minimum area to filter out small detections
-            if self.red_in_sight:
-                contours, _ = cv.findContours(red_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-                for contour in contours:
-                    area = cv.contourArea(contour)
-                    if area > min_contour_area:
-                        cv.drawContours(img, [contour], -1, (0, 0, 255), 2)
-            elif self.green_in_sight:
-                contours, _ = cv.findContours(green_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-                for contour in contours:
-                    area = cv.contourArea(contour)
-                    if area > min_contour_area:
-                        cv.drawContours(img, [contour], -1, (0, 255, 0), 2)
-            elif self.blue_in_sight:
-                contours, _ = cv.findContours(blue_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-                for contour in contours:
-                    area = cv.contourArea(contour)
-                    if area > min_contour_area:
-                        cv.drawContours(img, [contour], -1, (255, 0, 0), 2)
+            # Check if a color is detected in 6 or more segments and print message once
+            if red_segments >= 9 and not self.red_in_sight:
+                print("Red detected in multiple segments!")
+                self.red_in_sight = True  # Set flag to indicate red is in sight
+            elif red_segments < 0 and self.red_in_sight:
+                self.red_in_sight = False  # Reset flag when red goes out of sight
+    
+            if green_segments >= 9 and not self.green_in_sight:
+                print("Green detected in multiple segments!")
+                self.green_in_sight = True  # Set flag to indicate green is in sight
+            elif green_segments < 0 and self.green_in_sight:
+                self.green_in_sight = False  # Reset flag when green goes out of sight
+    
+            if blue_segments >= 9 and not self.blue_in_sight:
+                print("Blue detected in multiple segments!")
+                self.blue_in_sight = True  # Set flag to indicate blue is in sight
+            elif blue_segments < 0 and self.blue_in_sight:
+                self.blue_in_sight = False  # Reset flag when blue goes out of sight
     
             # Combine all color masks for display
             combined_mask = cv.bitwise_or(cv.bitwise_or(red_mask, green_mask), blue_mask)
             masked_img = cv.bitwise_and(img, img, mask=combined_mask)
     
             # Display the result
-            cv.imshow("Dominant Color Mask", masked_img)
+            cv.imshow("Dominant Color Mask with Grid Segmentation", masked_img)
             cv.waitKey(1)
     
             # Reset interval counter
