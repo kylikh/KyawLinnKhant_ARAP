@@ -83,7 +83,11 @@ class ARAP:
         self.default_red = 100  # Example default value for red
         self.default_green = 150  # Example default value for green
         self.default_blue = 50   # Example default value for blue
-        
+        self.camera_interval = 0
+        self.red_tally, self.green_tally, self.blue_tally = 0, 0, 0
+        self.red_in_sight, self.green_in_sight, self.blue_in_sight = False, False, False
+        self.camera = None  # Assume this is your Webots camera instance
+        self.last_minute_time = time.time()
         # Initialize last_minute_time
         self.last_minute_time = time.time()  # Initialize here
         self.minutes_passed = 0  # Track elapsed minutes
@@ -187,22 +191,23 @@ class ARAP:
     def step(self):
         if self.robot.step(self.get_time_step()) == -1:
             sys.exit(0)
-
+            
     def get_camera_image(self, interval):
         width = self.camera.getWidth()
         height = self.camera.getHeight()
         image = self.camera.getImage()
         
+        # Initialize average RGB values
         avg_red, avg_green, avg_blue = 0, 0, 0
     
         if self.camera_interval >= interval:
-            red_sum, green_sum, blue_sum = 0, 0, 0
-            img = np.frombuffer(image, np.uint8).reshape((height, width, 4))[:, :, :3]
+            # Convert the Webots image to OpenCV format and make it writable
+            img = np.frombuffer(image, np.uint8).reshape((height, width, 4))[:, :, :3].copy()
             
             # Convert the image from BGR to HSV
             img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-    
-            # Calculate the sum of RGB values for dominant color detection
+            
+            # Calculate the sum of RGB values to find average color
             red_sum = np.sum(img[:, :, 2])
             green_sum = np.sum(img[:, :, 1])
             blue_sum = np.sum(img[:, :, 0])
@@ -211,54 +216,118 @@ class ARAP:
             avg_green = green_sum / total_pixels
             avg_blue = blue_sum / total_pixels
     
-            # Determine dominant color
-            dominant_color = None
-            if avg_red > avg_green and avg_red > avg_blue:
-                dominant_color = "red"
-            elif avg_green > avg_red and avg_green > avg_blue:
-                dominant_color = "green"
-            elif avg_blue > avg_red and avg_blue > avg_green:
-                dominant_color = "blue"
+            # Define HSV ranges for red with separate ranges for dark and light red
+            lower_dark_red_1 = np.array([0, 100, 50])
+            upper_dark_red_1 = np.array([10, 255, 150])
+            lower_dark_red_2 = np.array([170, 100, 50])
+            upper_dark_red_2 = np.array([180, 255, 150])
     
-            mask = None
-            if dominant_color == "red":
-                # Two ranges for red in HSV
-                lower_red_1 = np.array([0, 100, 100])
-                upper_red_1 = np.array([10, 255, 255])
-                lower_red_2 = np.array([170, 100, 100])
-                upper_red_2 = np.array([180, 255, 255])
+            lower_light_red_1 = np.array([0, 100, 150])
+            upper_light_red_1 = np.array([10, 255, 255])
+            lower_light_red_2 = np.array([170, 100, 150])
+            upper_light_red_2 = np.array([180, 255, 255])
     
-                # Create two masks and combine them on the HSV image
-                mask1 = cv.inRange(img_hsv, lower_red_1, upper_red_1)
-                mask2 = cv.inRange(img_hsv, lower_red_2, upper_red_2)
-                mask = cv.bitwise_or(mask1, mask2)
+            # Create masks for dark and light red, then combine them
+            dark_red_mask1 = cv.inRange(img_hsv, lower_dark_red_1, upper_dark_red_1)
+            dark_red_mask2 = cv.inRange(img_hsv, lower_dark_red_2, upper_dark_red_2)
+            dark_red_mask = cv.bitwise_or(dark_red_mask1, dark_red_mask2)
     
-            elif dominant_color == "green":
-                # Wider range for green in HSV
-                lower_green = np.array([35, 50, 50])
-                upper_green = np.array([85, 255, 255])
-                mask = cv.inRange(img_hsv, lower_green, upper_green)
+            light_red_mask1 = cv.inRange(img_hsv, lower_light_red_1, upper_light_red_1)
+            light_red_mask2 = cv.inRange(img_hsv, lower_light_red_2, upper_light_red_2)
+            light_red_mask = cv.bitwise_or(light_red_mask1, light_red_mask2)
     
-            elif dominant_color == "blue":
-                # Wider range for blue in HSV
-                lower_blue = np.array([90, 50, 50])
-                upper_blue = np.array([140, 255, 255])
-                mask = cv.inRange(img_hsv, lower_blue, upper_blue)
+            # Combine light and dark red masks
+            red_mask = cv.bitwise_or(dark_red_mask, light_red_mask)
+            red_score = cv.countNonZero(red_mask)
     
-            # Apply the mask to the original BGR image
-            masked_img = cv.bitwise_and(img, img, mask=mask)
+            # Define HSV range for green
+            lower_green = np.array([35, 50, 50])
+            upper_green = np.array([85, 255, 255])
+            green_mask = cv.inRange(img_hsv, lower_green, upper_green)
+            green_score = cv.countNonZero(green_mask)
     
-            # Display the masked image
+            # Define HSV ranges for dark blue and light blue
+            lower_dark_blue = np.array([100, 70, 20])
+            upper_dark_blue = np.array([130, 255, 100])
+    
+            lower_light_blue = np.array([105, 120, 90])
+            upper_light_blue = np.array([125, 255, 220])
+    
+            # Create masks for dark and light blue, then combine them
+            dark_blue_mask = cv.inRange(img_hsv, lower_dark_blue, upper_dark_blue)
+            light_blue_mask = cv.inRange(img_hsv, lower_light_blue, upper_light_blue)
+            blue_mask = cv.bitwise_or(dark_blue_mask, light_blue_mask)
+    
+            # Apply minimal morphological operations to reduce noise
+            kernel = np.ones((3, 3), np.uint8)
+            blue_mask = cv.erode(blue_mask, kernel, iterations=1)
+            blue_score = cv.countNonZero(blue_mask)
+    
+            # Check for red detection and update sight status and tally
+            if red_score > 1000 and not self.red_in_sight:
+                print("Red Detected!")
+                self.red_tally += 1
+                self.red_in_sight = True
+            elif red_score <= 1000 and self.red_in_sight:
+                print("Red Out of Sight")
+                self.red_in_sight = False
+    
+            # Check for green detection and update sight status and tally
+            if green_score > 1000 and not self.green_in_sight:
+                print("Green Detected!")
+                self.green_tally += 1
+                self.green_in_sight = True
+            elif green_score <= 1000 and self.green_in_sight:
+                print("Green Out of Sight")
+                self.green_in_sight = False
+    
+            # Check for blue detection and update sight status and tally
+            if blue_score > 1000 and not self.blue_in_sight:
+                print("Blue Detected!")
+                self.blue_tally += 1
+                self.blue_in_sight = True
+            elif blue_score <= 1000 and self.blue_in_sight:
+                print("Blue Out of Sight")
+                self.blue_in_sight = False
+    
+            # Optional: Use contour detection for each color with area threshold
+            min_contour_area = 500  # Set a minimum area to filter out small detections
+            if self.red_in_sight:
+                contours, _ = cv.findContours(red_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+                for contour in contours:
+                    area = cv.contourArea(contour)
+                    if area > min_contour_area:
+                        cv.drawContours(img, [contour], -1, (0, 0, 255), 2)
+            elif self.green_in_sight:
+                contours, _ = cv.findContours(green_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+                for contour in contours:
+                    area = cv.contourArea(contour)
+                    if area > min_contour_area:
+                        cv.drawContours(img, [contour], -1, (0, 255, 0), 2)
+            elif self.blue_in_sight:
+                contours, _ = cv.findContours(blue_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+                for contour in contours:
+                    area = cv.contourArea(contour)
+                    if area > min_contour_area:
+                        cv.drawContours(img, [contour], -1, (255, 0, 0), 2)
+    
+            # Combine all color masks for display
+            combined_mask = cv.bitwise_or(cv.bitwise_or(red_mask, green_mask), blue_mask)
+            masked_img = cv.bitwise_and(img, img, mask=combined_mask)
+    
+            # Display the result
             cv.imshow("Dominant Color Mask", masked_img)
             cv.waitKey(1)
     
+            # Reset interval counter
             self.camera_interval = 0
         else:
+            # Increment the camera interval to wait until the next capture
             self.camera_interval += 1
-        
+    
+        # Return average RGB values and update tallies
         return avg_red, avg_green, avg_blue
     
-        
     #def ground_obstacles_detected(self):
     #    for i in range(self.GROUND_SENSORS_NUMBER):
     #        if not self.ground_sensors[i]:
