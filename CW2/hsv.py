@@ -2,8 +2,8 @@
 from controller import Robot, Motor, LED, DistanceSensor, Camera
 import sys
 import time
-import numpy as np
 import cv2 as cv
+import numpy as np
 
 class ARAP:
     # Robot constants
@@ -48,12 +48,7 @@ class ARAP:
                  [0.07, 67.19, 0.04897] ]
     
     offsets = [MULTIPLIER * MAX_SPEED, MULTIPLIER * MAX_SPEED]
-    colors_rgb = {
-      "red": [[175, 187, 71], [176, 188, 72], [179, 219, 212], [179, 202, 208]],
-      "blue": [[119, 211, 99], [119, 211, 99], [120, 223, 217], [120, 206, 213]],
-      "green": [[65, 199, 77], [61, 223, 213], [61, 205, 209], [65, 199, 77]]
-    }
-  
+    
     def __init__(self):
         # Robot instance
         self.robot = Robot()
@@ -193,91 +188,59 @@ class ARAP:
         if self.robot.step(self.get_time_step()) == -1:
             sys.exit(0)
 
-  def get_camera_image(self, interval):
-    # Convert RGB shades to HSV bounds
-    def get_hsv_bounds(rgb_value, buffer=10):
-        hsv_value = cv.cvtColor(np.uint8([[rgb_value]]), cv.COLOR_RGB2HSV)[0][0]
-        lower_bound = np.clip(hsv_value - buffer, 0, 255)
-        upper_bound = np.clip(hsv_value + buffer, 0, 255)
-        return lower_bound, upper_bound
-
-    color_bounds = {color: [get_hsv_bounds(shade) for shade in shades] for color, shades in self.colors_rgb.items()}
-
-    width = self.camera.getWidth()
-    height = self.camera.getHeight()
-    image_data = self.camera.getImage()
-
-    # Initialize RGB values
-    red_avg = 0
-    green_avg = 0
-    blue_avg = 0
-
-    # Capture a new image every specified interval
-    if self.camera_interval >= interval:
-        # Reset color flags
-        red_detected = False
-        green_detected = False
-        blue_detected = False
-
-        # Convert Webots image data to OpenCV format
-        img = np.frombuffer(image_data, np.uint8).reshape((height, width, 4))[:, :, :3]
-        img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-
-        # Process each color and its shades
-        for color, bounds in color_bounds.items():
-            color_mask = np.zeros((height, width), dtype=np.uint8)
-            for lower_bound, upper_bound in bounds:
-                # Apply mask for each shade
-                shade_mask = cv.inRange(img_hsv, lower_bound, upper_bound)
-                color_mask = cv.bitwise_or(color_mask, shade_mask)
-
-            # Check if the color is detected in the current image and calculate mean RGB values
-            if cv.countNonZero(color_mask) > 0:
-                filtered_img = cv.bitwise_and(img, img, mask=color_mask)
-                mean_red = np.mean(filtered_img[:, :, 2])
-                mean_green = np.mean(filtered_img[:, :, 1])
-                mean_blue = np.mean(filtered_img[:, :, 0])
-
-                if color == "red" and not self.red_in_sight:
-                    print("Detected Red!")
-                    self.red_tally += 1
-                    self.red_in_sight = True
-                    red_avg = mean_red
-                elif color == "blue" and not self.blue_in_sight:
-                    print("Detected Blue!")
-                    self.blue_tally += 1
-                    self.blue_in_sight = True
-                    blue_avg = mean_blue
-                elif color == "green" and not self.green_in_sight:
-                    print("Detected Green!")
-                    self.green_tally += 1
-                    self.green_in_sight = True
-                    green_avg = mean_green
-
-        # Track time for one-minute interval and log tallies
-        current_time = time.time()
-        if current_time - self.last_minute_time >= 60:
-            self.minutes_passed += 1
-            print(f"Encounters in the last minute (red: {self.red_tally}, green: {self.green_tally}, blue: {self.blue_tally}) during {self.minutes_passed} minutes.")
-            self.last_minute_time = current_time
-            # Reset tallies for next minute
-            self.red_tally = 0
-            self.green_tally = 0
-            self.blue_tally = 0
-
-        # Reset interval counter
-        self.camera_interval = 0
-    else:
-        # Increment the camera interval to wait until the next capture
-        self.camera_interval += 1
-
-    return red_avg, green_avg, blue_avg  # Return average RGB values
-
-
-    def step(self):
-        if self.robot.step(self.time_step) == -1:
-            sys.exit(0)
-
+    def get_camera_image(self, interval):
+        width = self.camera.getWidth()
+        height = self.camera.getHeight()
+        image = self.camera.getImage()
+        
+        # Initialize average RGB values
+        avg_red, avg_green, avg_blue = 0, 0, 0
+    
+        if self.camera_interval >= interval:
+            # Convert the camera image to OpenCV format
+            img = np.frombuffer(image, np.uint8).reshape((height, width, 4))[:, :, :3]
+    
+            # Calculate the average RGB values
+            red_sum = np.sum(img[:, :, 2])
+            green_sum = np.sum(img[:, :, 1])
+            blue_sum = np.sum(img[:, :, 0])
+            total_pixels = width * height
+            avg_red = red_sum / total_pixels
+            avg_green = green_sum / total_pixels
+            avg_blue = blue_sum / total_pixels
+    
+            # Determine dominant color
+            dominant_color = None
+            if avg_red > avg_green and avg_red > avg_blue:
+                dominant_color = "red"
+                lower_hsv = np.array([0, 100, 100])   # Adjusted lower bound for red in HSV
+                upper_hsv = np.array([10, 255, 255])  # Adjusted upper bound for red in HSV
+            elif avg_green > avg_red and avg_green > avg_blue:
+                dominant_color = "green"
+                lower_hsv = np.array([35, 50, 50])    # Adjusted lower bound for green in HSV
+                upper_hsv = np.array([85, 255, 255])  # Adjusted upper bound for green in HSV
+            elif avg_blue > avg_red and avg_blue > avg_green:
+                dominant_color = "blue"
+                lower_hsv = np.array([90, 50, 50])    # Adjusted lower bound for blue in HSV
+                upper_hsv = np.array([130, 255, 255]) # Adjusted upper bound for blue in HSV
+    
+            # Convert image to HSV and apply mask based on dominant color
+            img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+            mask = cv.inRange(img_hsv, lower_hsv, upper_hsv)
+            masked_img = cv.bitwise_and(img, img, mask=mask)
+    
+            # Display masked image
+            cv.imshow("Dominant Color Mask", masked_img)
+            cv.waitKey(1)
+    
+            # Reset interval counter
+            self.camera_interval = 0
+        else:
+            self.camera_interval += 1
+        
+        return avg_red, avg_green, avg_blue
+    
+    
     #def ground_obstacles_detected(self):
     #    for i in range(self.GROUND_SENSORS_NUMBER):
     #        if not self.ground_sensors[i]:
