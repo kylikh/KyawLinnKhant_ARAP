@@ -248,7 +248,7 @@ class ARAP:
 
             # Consistency check with a minimum pixel threshold to ensure a significant detection
             red_detected = cv.countNonZero(red_mask) > 750  # Adjust threshold for significance
-            green_detected = cv.countNonZero(green_mask) > 500
+            green_detected = cv.countNonZero(green_mask) > 550
             blue_detected = cv.countNonZero(blue_mask) > 750
     
             # Tally and first-time detection messages
