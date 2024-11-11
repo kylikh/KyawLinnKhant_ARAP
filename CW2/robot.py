@@ -219,19 +219,17 @@ class ARAP:
             # Define green HSV ranges for both dark and light shades
             lower_dark_green = np.array([40, 50, 20])
             upper_dark_green = np.array([80, 255, 100])
-            
             lower_light_green = np.array([35, 80, 100])
             upper_light_green = np.array([85, 255, 255])
             
             
             lower_dark_blue = np.array([100, 70, 50])  # Adjusted blue range
             upper_dark_blue = np.array([130, 255, 200])
-            lower_light_blue = np.array([105, 120, 90])
-            upper_light_blue = np.array([125, 255, 220])
-            
+            lower_light_blue = np.array([85, 50, 100])   # Slightly lower S and V values
+            upper_light_blue = np.array([130, 255, 255])  # Allow a bit more flexibility in the upper range
+
             # Create masks for each color within the ROI
             red_mask = cv.inRange(img_hsv, lower_dark_red, upper_dark_red) | cv.inRange(img_hsv, lower_light_red, upper_light_red)
-            # Combine dark and light green masks
             green_mask = cv.inRange(img_hsv, lower_dark_green, upper_dark_green) | cv.inRange(img_hsv, lower_light_green, upper_light_green)
             blue_mask = cv.inRange(img_hsv, lower_dark_blue, upper_dark_blue)| cv.inRange(img_hsv, lower_light_blue, upper_light_blue)
 
@@ -247,7 +245,7 @@ class ARAP:
             self.display_grid_with_detection(img, red_mask, green_mask, blue_mask)
 
             # Consistency check with a minimum pixel threshold to ensure a significant detection
-            red_detected = cv.countNonZero(red_mask) > 750  # Adjust threshold for significance
+            red_detected = cv.countNonZero(red_mask) > 900  # Adjust threshold for significance
             green_detected = cv.countNonZero(green_mask) > 550
             blue_detected = cv.countNonZero(blue_mask) > 750
     
